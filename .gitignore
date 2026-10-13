@@ -1,0 +1,19 @@
+# Your WiFi password and printer access code live here - never commit it.
+firmware/mqtt_timelapse/config.h
+
+# Build output and sliced files
+build/
+*.bin
+*.elf
+*.map
+*.gcode.3mf
+*.3mf
+
+# Python
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/

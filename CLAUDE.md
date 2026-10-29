@@ -148,10 +148,13 @@ real setpoint), `KEY_PRESS_MS` (50 ms). User-facing: `tl interval`, `tl delta`.
 
 ## Measured (ESP32-S3, core 3.3.8, P1S)
 
-- Flash: 1,198,249 bytes (91% of the default slot); static RAM 48 KB.
+- Flash: 1,207,849 bytes with the Sony mode (92% of the default slot); static RAM 48 KB.
 - Heap: 245 KB free at boot, 169 KB after NimBLE starts, ~40 KB free with WiFi,
   the TLS link and Bluetooth all running (lowest seen 29 KB).
 - Phone reconnects 2-5 s after the board starts advertising, using the stored bond,
   also after a firmware update over USB.
-- Shutter task: a phone press uses ~2.1 KB of its 4 KB stack.
+- Shutter task: a phone press uses ~2.1 KB of its 4 KB stack, a Sony shot ~1.7 KB.
+- Sony ZV-E10 II: first pairing ~4 s from "connecting" to READY; after a reboot
+  the saved camera is found at ~5 s and READY at ~6 s, no pairing screen. All
+  four button writes (focus/shutter down, up) are acknowledged.
 - P1S largest report seen: 4.6 KB (pushall reply). H2S: 18 KB.

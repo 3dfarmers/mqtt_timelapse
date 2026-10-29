@@ -85,18 +85,19 @@ WiFi settings: config.h | printer settings: config.h
 
 ### Or: a Sony camera instead of the phone
 
-Sony cameras with a **Bluetooth Rmt Ctrl** setting (for example the ZV-E10 II,
-a6400 or a7 IV) can be the camera. The board then acts as Sony's
-Bluetooth remote. Sony does not publish this protocol; the values come from the
+Sony cameras with a **Bluetooth Rmt Ctrl** setting can be the camera (tested
+on a **ZV-E10 II**; the a6400, a7 IV and others have the same setting). The
+board then acts as Sony's Bluetooth remote. Sony does not publish this protocol; the values come from the
 community's reverse engineering ([furble](https://github.com/gkoh/furble),
 [Greg Leeds](https://gregleeds.com/reverse-engineering-sony-camera-bluetooth/)).
 
 1. `config.h`: `#define SHUTTER "sony"`, or type `tl shutter sony` and `reboot`.
 2. Camera: Menu > Network > Bluetooth: **Bluetooth Function On**,
    **Bluetooth Rmt Ctrl On**, then **Pairing**.
-3. The board finds the camera (`[CAM] Sony camera ... connecting`); confirm the
-   pairing on the camera screen. `[CAM] camera READY` = done. From then on it
-   reconnects by itself whenever the camera is on.
+3. Within about 10 s the board finds the camera (`[CAM] Sony camera ...
+   connecting`). If the camera asks to pair, confirm it. `[CAM] camera READY`
+   = done. From then on it reconnects by itself whenever the camera is on
+   (about 5 s after the board starts).
 4. `tl shot`: the camera takes a photo.
 5. Camera settings for a timelapse: manual focus, photo mode, auto review off,
    power-save start time as long as possible, powered over USB-C, SD card with room.
@@ -226,8 +227,8 @@ yourself; Claude does not need them.
 
 ## Tested with
 
-ESP32-S3 (FarmBoard 2) · esp32 core 3.3.8 · PubSubClient 2.8 · Bambu Lab P1S in
-LAN-only mode · Android with Open Camera.
+ESP32-S3 (FarmBoard 2 and 2.1) · esp32 core 3.3.8 · PubSubClient 2.8 · Bambu Lab
+P1S in LAN-only mode · Android with Open Camera · Sony ZV-E10 II (Sony mode).
 
 Made by 3D Farmers. MIT licensed, see `LICENSE`. You change the G-code your
 printer runs at your own risk: inspect the script's output before you print.

@@ -25,7 +25,7 @@ wire to the printer, no app on the phone besides a camera.
 |---|---|
 | Printer | Bambu Lab in LAN mode (LAN-only is fine). Tested on a **P1S**. X1 and P1 files work; for A1, P2S and H2 run the script without an output first and check what it finds. |
 | Board | Any **ESP32-S3** dev board (tested). ESP32-C3, C6 and C5 should work. Not the original ESP32. |
-| Phone | Android with **Open Camera** (tested). Most camera apps take a photo on a volume key, including the iPhone Camera app (untested here). Tripod, charger. |
+| Phone or camera | Android with **Open Camera** (tested). Most camera apps take a photo on a volume key, including the iPhone Camera app (untested here). Or a **Sony camera** with Bluetooth remote support (see below). Tripod, charger. |
 | Computer | Arduino IDE 2 (or `arduino-cli`), Python 3.8+, Bambu Studio |
 
 ## 1. Flash the board
@@ -83,6 +83,24 @@ WiFi settings: config.h | printer settings: config.h
 5. `tl shot` again: exactly one photo. Reboot the board (`reboot`): the phone
    reconnects by itself within seconds, no pairing.
 
+### Or: a Sony camera instead of the phone
+
+Sony cameras with a **Bluetooth Rmt Ctrl** setting (for example the ZV-E10 II,
+a6400 or a7 IV) can be the camera. The board then acts as Sony's
+Bluetooth remote. Sony does not publish this protocol; the values come from the
+community's reverse engineering ([furble](https://github.com/gkoh/furble),
+[Greg Leeds](https://gregleeds.com/reverse-engineering-sony-camera-bluetooth/)).
+
+1. `config.h`: `#define SHUTTER "sony"`, or type `tl shutter sony` and `reboot`.
+2. Camera: Menu > Network > Bluetooth: **Bluetooth Function On**,
+   **Bluetooth Rmt Ctrl On**, then **Pairing**.
+3. The board finds the camera (`[CAM] Sony camera ... connecting`); confirm the
+   pairing on the camera screen. `[CAM] camera READY` = done. From then on it
+   reconnects by itself whenever the camera is on.
+4. `tl shot`: the camera takes a photo.
+5. Camera settings for a timelapse: manual focus, photo mode, auto review off,
+   power-save start time as long as possible, powered over USB-C, SD card with room.
+
 ## 3. Prepare the print
 
 1. Bambu Studio: Others > Special mode > **Timelapse: Smooth**. This parks the
@@ -133,13 +151,14 @@ ffmpeg -framerate 30 -pattern_type glob -i '*.jpg' -c:v libx264 -pix_fmt yuv420p
 | `dump on` / `dump off` | print every raw printer report (for adapting to new printers) |
 | `pushall` | ask the printer for a full report |
 | `tl shot` | press the shutter once |
+| `tl shutter phone\|sony` | phone keyboard or Sony camera remote (reboot to apply) |
 | `tl on` / `tl off` | take photos on markers, or pause |
 | `tl status` | phone link, photos this print, last marker |
 | `tl interval <ms>` | minimum time between photos (default 1500) |
 | `tl delta <n>` | marker step in °C (default 1, must match `--delta`) |
 | `tl logtemps on\|off` | log every bed target change |
 | `tl name <text>` | Bluetooth name (reboot to apply) |
-| `tl unpair` | delete all Bluetooth bonds on the board |
+| `tl unpair` | delete all Bluetooth bonds on the board (and the saved camera) |
 | `reboot` | |
 
 ## Choosing the dwell (do this once)
@@ -185,6 +204,9 @@ toward the prime tower means the dwell is too short.
 | `connected but no report yet` | Wrong serial number. |
 | `tl shot` raises the volume but no photo | Camera app is not in front, or its volume key is not set to take a photo. |
 | `pairing FAILED` | The phone still has an old bond. Forget the device on the phone, pair again. |
+| `[CAM] waiting for a camera in pairing mode` | Sony: Menu > Network > Bluetooth > Pairing, with Bluetooth Rmt Ctrl On. |
+| `[CAM] ... Bluetooth Rmt Ctrl is off` | Turn it on in Menu > Network > Bluetooth. |
+| `the camera did not accept the shutter press` | Camera asleep, in playback or menu, or the card is full. |
 | No `SHOT` lines during a print | Timelapse was off in the print dialog, or the file was re-sliced. |
 | Blurry frames | Lock focus and exposure; raise the dwell. |
 

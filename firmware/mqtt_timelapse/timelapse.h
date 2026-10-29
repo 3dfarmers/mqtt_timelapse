@@ -24,7 +24,8 @@
 //
 // BLE: the NimBLE host API that arduino-esp32 3.x ships for the ESP32-S3, C3,
 // C6 and C5 (no extra library). The classic ESP32 uses Bluedroid in that core
-// and is not supported by this file.
+// and is not supported by this file. A Sony camera instead of a phone:
+// camera_sony.h.
 //
 // The sketch MUST define `extern "C" bool btInUse() { return true; }`.
 // Without it the core frees the Bluetooth controller's RAM at boot (no
@@ -35,6 +36,13 @@
 
 namespace Timelapse {
 
+// What takes the photo.
+//   SHUTTER_PHONE: the board is a Bluetooth keyboard; the phone pairs with it
+//                  and its camera app shoots on Volume Up.
+//   SHUTTER_SONY:  the board is a Sony Bluetooth remote; it pairs with a Sony
+//                  camera ("Bluetooth Rmt Ctrl") and presses its shutter.
+enum ShutterMode : uint8_t { SHUTTER_PHONE = 0, SHUTTER_SONY = 1 };
+
 // Persisted in NVS under the sketch's namespace. NVS keys are limited to 15
 // characters, hence "tl_min_int_ms".
 struct Config {
@@ -43,11 +51,14 @@ struct Config {
   uint8_t  markerDelta   = 1;                    // tl_marker_delta (must match --delta)
   char     bleName[30]   = "Timelapse Shutter";  // tl_ble_name
   bool     logTemps      = true;                 // tl_log_temps
+  uint8_t  shutter       = SHUTTER_PHONE;        // tl_shutter (applies on boot)
 };
 
 // Loads the config and starts the Bluetooth shutter. defaultName (optional) is
-// the name the phone sees until `tl name` sets another one.
-void begin(Print& log, const char* nvsNamespace, const char* defaultName = nullptr);
+// the name the phone (or camera) sees until `tl name` sets another one;
+// defaultShutter is "phone" or "sony" until `tl shutter` sets another one.
+void begin(Print& log, const char* nvsNamespace, const char* defaultName = nullptr,
+           const char* defaultShutter = nullptr);
 
 // Non-blocking housekeeping: base tracking, Bluetooth event logging,
 // advertising watchdog. Call every loop() pass.

@@ -21,8 +21,16 @@
 #define PRINTER_ACCESS_CODE  "12345678"
 #define PRINTER_SERIAL       "01P00A000000000"
 
+// --- What takes the photo ----------------------------------------------------
+// "phone": the board is a Bluetooth keyboard, your phone's camera app shoots on
+//          Volume Up.
+// "sony":  the board is a Sony Bluetooth remote for a Sony camera with
+//          Menu > Network > Bluetooth > Bluetooth Rmt Ctrl (ZV-E10 II, a6400, ...).
+// `tl shutter phone|sony` in the Serial Monitor changes it later (reboot).
+#define SHUTTER "phone"
+
 // --- Optional ----------------------------------------------------------------
-// The name your phone sees when pairing.
+// The name your phone or camera sees when pairing.
 #define SHUTTER_NAME "Timelapse Shutter"
 
 // LED that blinks 150 ms on every marker, for the latency test. LED_BUILTIN is

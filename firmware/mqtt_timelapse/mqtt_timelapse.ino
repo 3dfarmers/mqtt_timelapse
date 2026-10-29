@@ -5,7 +5,8 @@
  * The board reads the printer's MQTT reports over your WiFi. When the bed
  * target steps up by 1 C - a marker tools/inject_timelapse_markers.py puts
  * right after Bambu's timelapse park - it presses Volume Up on your phone over
- * Bluetooth. Your camera app takes the photo.
+ * Bluetooth (your camera app takes the photo), or the shutter of a Sony camera
+ * through its Bluetooth remote function (SHUTTER "sony" in config.h).
  *
  * Board:    ESP32-S3 (tested), ESP32-C3 / C6 / C5 should work. Not the classic ESP32.
  * Core:     esp32 by Espressif 3.3.x (Arduino IDE > Boards Manager)
@@ -27,7 +28,11 @@
 #define CONFIG_SOURCE "config.example.h (no config.h)"
 #endif
 
-#define FW_VERSION       "1.0.0"
+#ifndef SHUTTER          // config.h files from 1.0.0 do not have it
+#define SHUTTER "phone"
+#endif
+
+#define FW_VERSION       "1.1.0"
 #define NVS_NAMESPACE    "mqtt_tl"
 #define MQTT_PORT        8883
 // The biggest Bambu report measured is 18 KB (H2S push_status). PubSubClient
@@ -473,7 +478,7 @@ void setup() {
 
   // Bluetooth first, so the phone can be paired and tested before the printer
   // is set up.
-  Timelapse::begin(Serial, NVS_NAMESPACE, SHUTTER_NAME);
+  Timelapse::begin(Serial, NVS_NAMESPACE, SHUTTER_NAME, SHUTTER);
   Timelapse::setMarkerHook(markerLed);
 
   tls.setInsecure();   // the printer's certificate is self-signed

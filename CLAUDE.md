@@ -17,6 +17,7 @@ firmware/mqtt_timelapse/
   mqtt_timelapse.ino   WiFi, Bambu MQTT (TLS 8883, user bblp, access code),
                        report parsing, serial commands, settings in NVS
   timelapse.h/.cpp     marker detection + Bluetooth LE HID shutter (NimBLE)
+  camera_sony.h/.cpp   Sony camera shutter: the board as Sony's Bluetooth remote
   config.example.h     template for config.h (gitignored, holds the secrets)
 ```
 
@@ -100,6 +101,28 @@ The key is `SHUTTER_USAGE` in `timelapse.cpp` (HID Consumer page, default
 keys would need a keyboard collection added to `REPORT_MAP` and a second report;
 check the app's settings for a volume-key option first.
 
+### A real camera instead of a phone
+
+`SHUTTER "sony"` (or `tl shutter sony` + reboot) turns the board from a
+Bluetooth peripheral (phone connects to it) into a central: it scans for a Sony
+camera, pairs, and writes the remote's button codes. The mode is fixed per boot
+because the two roles need different pairing security (phone: Just Works;
+Sony: authenticated, numeric comparison confirmed on the camera).
+
+- Detection: manufacturer data 0x012D / type 0x0003, mode byte after tag 0x22
+  (pairing enabled = bit 6, remote enabled = bit 1).
+- Control: service `8000ff00-ff00-ffff-ffff-ffffffffffff`, characteristic
+  `0xFF01`, written with response: `01 07` focus down, `01 09` shutter down,
+  `01 08` shutter up, `01 06` focus up.
+- The protocol is reverse engineered (furble, Greg Leeds; links in
+  `camera_sony.h`). If a Sony model behaves differently, compare with
+  furble's `lib/furble/Sony.*`.
+- Other brands: furble also implements Canon, Fujifilm and Nikon remotes.
+  A new brand = a new `camera_<brand>.cpp` with the same seven functions as
+  `camera_sony.h`, a new `ShutterMode` value, and its pairing security in
+  `bleBegin()`. Test pairing, `tl shot` and reconnect on the real camera before
+  claiming support.
+
 ### A printer that is not a Bambu
 
 Replace the MQTT part of the sketch with a poll of the printer's API (every
@@ -128,5 +151,7 @@ real setpoint), `KEY_PRESS_MS` (50 ms). User-facing: `tl interval`, `tl delta`.
 - Flash: 1,198,249 bytes (91% of the default slot); static RAM 48 KB.
 - Heap: 245 KB free at boot, 169 KB after NimBLE starts, ~40 KB free with WiFi,
   the TLS link and Bluetooth all running (lowest seen 29 KB).
-- Phone reconnects 2-5 s after the board starts advertising, using the stored bond.
+- Phone reconnects 2-5 s after the board starts advertising, using the stored bond,
+  also after a firmware update over USB.
+- Shutter task: a phone press uses ~2.1 KB of its 4 KB stack.
 - P1S largest report seen: 4.6 KB (pushall reply). H2S: 18 KB.

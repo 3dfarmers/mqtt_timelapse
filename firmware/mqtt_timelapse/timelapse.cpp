@@ -1,5 +1,6 @@
 // timelapse - see timelapse.h for the contract.
 #include "timelapse.h"
+#include "camera_sony.h"
 
 #include <atomic>
 #include <math.h>
@@ -88,6 +89,10 @@ uint8_t  g_protoMode = 0x01;          // report protocol
 std::atomic<bool> g_synced{false}, g_subscribed{false};
 std::atomic<int>  g_links{0}, g_discReason{0};
 std::atomic<uint8_t> g_connEv{0}, g_discEv{0}, g_encOkEv{0}, g_encFailEv{0}, g_resetEv{0};
+std::atomic<uint8_t> g_shotFailEv{0};   // Sony: the camera did not take a write
+uint8_t g_mode = SHUTTER_PHONE;         // the mode this boot runs (tl_shutter at boot)
+
+bool sonyMode() { return g_mode == SHUTTER_SONY; }
 
 bool isActive(const char* s) {
   return !strcmp(s, "RUNNING") || !strcmp(s, "PAUSE") ||
@@ -110,11 +115,13 @@ void loadConfig() {
   g_cfg.minIntervalMs = p.getUShort("tl_min_int_ms", d.minIntervalMs);
   g_cfg.markerDelta   = p.getUChar("tl_marker_delta", d.markerDelta);
   g_cfg.logTemps      = p.getBool("tl_log_temps", d.logTemps);
+  g_cfg.shutter       = p.getUChar("tl_shutter", d.shutter);
   char name[sizeof(g_cfg.bleName)];
   if (p.isKey("tl_ble_name") && p.getString("tl_ble_name", name, sizeof(name)) > 0 && name[0])
     strlcpy(g_cfg.bleName, name, sizeof(g_cfg.bleName));
   p.end();
   if (g_cfg.markerDelta < 1) g_cfg.markerDelta = 1;
+  if (g_cfg.shutter > SHUTTER_SONY) g_cfg.shutter = SHUTTER_PHONE;
 }
 
 void saveConfig() {
@@ -125,6 +132,7 @@ void saveConfig() {
   p.putUChar("tl_marker_delta", g_cfg.markerDelta);
   p.putString("tl_ble_name", g_cfg.bleName);
   p.putBool("tl_log_temps", g_cfg.logTemps);
+  p.putUChar("tl_shutter", g_cfg.shutter);
   p.end();
 }
 
@@ -296,12 +304,14 @@ void onSync() {
   ble_hs_util_ensure_addr(0);
   ble_hs_id_infer_auto(0, &g_ownAddrType);
   g_synced = true;
-  startAdvertising();
+  if (sonyMode()) Sony::onSync();   // the board scans for the camera instead
+  else startAdvertising();
 }
 
 void onReset(int) {
   g_synced = false;
   g_resetEv++;
+  if (sonyMode()) Sony::onReset();
 }
 
 void hostTask(void*) {
@@ -324,6 +334,10 @@ void sendUsage(uint16_t usage) {
 void shutterTask(void*) {
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    if (sonyMode()) {
+      if (!Sony::shoot()) g_shotFailEv++;
+      continue;
+    }
     sendUsage(SHUTTER_USAGE);
     vTaskDelay(pdMS_TO_TICKS(KEY_PRESS_MS));
     sendUsage(0);
@@ -336,41 +350,59 @@ int bondCount() {
   return -1;
 }
 
-int linkCount() { return g_bleUp ? g_links.load() : 0; }
+int linkCount() {
+  if (!g_bleUp) return 0;
+  return sonyMode() ? (Sony::ready() ? 1 : 0) : g_links.load();
+}
 
 bool bleBegin() {
   unsigned heapBefore = ESP.getFreeHeap();
   if (nimble_port_init() != ESP_OK) return false;   // also starts the BT controller
 
-  // "Just Works" with bonding, like any commercial shutter remote. Bonds are
-  // kept in NVS by NimBLE, so the phone reconnects after a reboot without
-  // pairing again. Identity keys are exchanged, which is what lets the board
-  // recognise the phone behind its rotating random address.
+  // Bonds are kept in NVS by NimBLE, so phone or camera reconnects after a
+  // reboot without pairing again. Identity keys are exchanged, which is what
+  // lets the board recognise a phone behind its rotating random address.
   ble_hs_cfg.reset_cb = onReset;
   ble_hs_cfg.sync_cb = onSync;
   ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
-  ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT;
   ble_hs_cfg.sm_bonding = 1;
-  ble_hs_cfg.sm_mitm = 0;
   ble_hs_cfg.sm_sc = 1;   // LE Secure Connections
   ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
   ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+  if (sonyMode()) {
+    // Sony cameras pair like their RMT-P1BT remote: authenticated, the camera
+    // shows a confirmation and the board accepts (camera_sony.cpp).
+    ble_hs_cfg.sm_io_cap = BLE_HS_IO_DISPLAY_YESNO;
+    ble_hs_cfg.sm_mitm = 1;
+  } else {
+    // "Just Works", like any commercial phone shutter remote.
+    ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT;
+    ble_hs_cfg.sm_mitm = 0;
+  }
 
   ble_svc_gap_init();
   ble_svc_gatt_init();
-  if (ble_gatts_count_cfg(g_services) != 0 || ble_gatts_add_svcs(g_services) != 0) return false;
+  // The keyboard (HID) services only exist in phone mode; a camera does not
+  // look at them and the phone should not find the board in Sony mode.
+  if (!sonyMode() && (ble_gatts_count_cfg(g_services) != 0 || ble_gatts_add_svcs(g_services) != 0))
+    return false;
   ble_svc_gap_device_name_set(g_cfg.bleName);
   ble_svc_gap_device_appearance_set(APPEARANCE_KEYBOARD);
   ble_store_config_init();
+  if (sonyMode()) Sony::begin(*g_log, g_ns);
 
-  if (xTaskCreate(shutterTask, "tl_shutter", 3072, nullptr, 2, &g_shutterTask) != pdPASS)
+  // 4 KB: a phone notify uses ~2.1 KB of stack (measured), the Sony writes
+  // wait on a semaphore on top of that.
+  if (xTaskCreate(shutterTask, "tl_shutter", 4096, nullptr, 2, &g_shutterTask) != pdPASS)
     return false;
   nimble_port_freertos_init(hostTask);
   for (int i = 0; i < 200 && !g_synced; i++) delay(10);   // host sync, normally < 100 ms
 
   g_bleUp = true;
-  g_log->printf("[TL] Bluetooth shutter up as \"%s\", bonds %d, %s (heap %u -> %u)\n",
-                g_cfg.bleName, bondCount(), g_synced ? "advertising" : "host NOT synced yet",
+  g_log->printf("[TL] Bluetooth shutter up as \"%s\" (%s), bonds %d, %s (heap %u -> %u)\n",
+                g_cfg.bleName, sonyMode() ? "Sony camera remote" : "phone keyboard",
+                bondCount(), !g_synced ? "host NOT synced yet"
+                             : sonyMode() ? "looking for the camera" : "advertising",
                 heapBefore, (unsigned)ESP.getFreeHeap());
   return true;
 }
@@ -378,7 +410,10 @@ bool bleBegin() {
 // Main task only. Returns false (and says why) when nothing was sent.
 bool pressShutter(const char** whyNot) {
   if (!g_bleUp) { *whyNot = "Bluetooth did not start (see the boot log)"; return false; }
-  if (linkCount() == 0) { *whyNot = "phone not connected"; return false; }
+  if (linkCount() == 0) {
+    *whyNot = sonyMode() ? "camera not connected" : "phone not connected";
+    return false;
+  }
   xTaskNotifyGive(g_shutterTask);
   return true;
 }
@@ -422,10 +457,15 @@ void onMarker(unsigned long now, int layer) {
 
 void printStatus() {
   unsigned long now = millis();
-  g_log->printf("[TL] photos: %s | shutter: %s | phone links: %d%s | bonds: %d | name: %s\n",
+  g_log->printf("[TL] photos: %s | shutter: %s, %s | %s: %d%s | bonds: %d | name: %s\n",
                 g_cfg.enabled ? "on" : "OFF (tl on)",
-                g_bleUp ? "up" : "did not start",
-                linkCount(), g_subscribed ? " (subscribed)" : "", bondCount(), g_cfg.bleName);
+                sonyMode() ? "Sony camera" : "phone", g_bleUp ? "up" : "did not start",
+                sonyMode() ? "camera ready" : "phone links", linkCount(),
+                g_subscribed ? " (subscribed)" : "", bondCount(), g_cfg.bleName);
+  if (g_cfg.shutter != g_mode)
+    g_log->printf("[TL] shutter switches to %s on the next reboot\n",
+                  g_cfg.shutter == SHUTTER_SONY ? "Sony camera" : "phone");
+  if (sonyMode()) Sony::status(*g_log);
   g_log->printf("[TL] this print: %lu photos, %lu markers, %lu missed | since boot: %lu photos\n",
                 (unsigned long)g_shots, (unsigned long)g_markers, (unsigned long)g_missed,
                 (unsigned long)g_shotsSinceBoot);
@@ -446,9 +486,10 @@ void printStatus() {
 }
 
 void printHelp() {
-  g_log->println("Timelapse (bed-target marker -> Bluetooth Volume Up):");
-  g_log->println("  tl status            phone link, photos this print, last trigger");
+  g_log->println("Timelapse (bed-target marker -> Bluetooth shutter):");
+  g_log->println("  tl status            phone/camera link, photos this print, last trigger");
   g_log->println("  tl shot              press the shutter once now (test)");
+  g_log->println("  tl shutter phone|sony  phone keyboard or Sony camera remote (reboot)");
   g_log->println("  tl reset             reset the photo counter");
   g_log->println("  tl on | tl off       take photos on markers, or pause");
   g_log->println("  tl interval <ms>     min time between photos (default 1500)");
@@ -469,11 +510,14 @@ bool parseOnOff(const String& v, bool* out) {
 // =============================================================================
 // Public API
 // =============================================================================
-void begin(Print& log, const char* nvsNamespace, const char* defaultName) {
+void begin(Print& log, const char* nvsNamespace, const char* defaultName,
+           const char* defaultShutter) {
   g_log = &log;
   g_ns  = nvsNamespace;
   if (defaultName && defaultName[0]) strlcpy(g_cfg.bleName, defaultName, sizeof(g_cfg.bleName));
+  if (defaultShutter && !strcasecmp(defaultShutter, "sony")) g_cfg.shutter = SHUTTER_SONY;
   loadConfig();
+  g_mode = g_cfg.shutter;   // fixed for this boot: the two roles need different security
   if (!bleBegin())
     g_log->println("[TL] Bluetooth start FAILED - no shutter. Is btInUse() true in the sketch?");
   if (!g_cfg.enabled) g_log->println("[TL] photos are OFF (tl on)");
@@ -496,6 +540,16 @@ void loop() {
   }
 
   if (!g_bleUp) return;
+
+  if (sonyMode()) {
+    static uint8_t shotFail = 0;
+    if (g_shotFailEv != shotFail) {
+      shotFail = g_shotFailEv;
+      g_log->printf("[TL] t=%lu the camera did not accept the shutter press\n", now);
+    }
+    Sony::loop();
+    return;
+  }
 
   static uint8_t conn = 0, disc = 0, encOk = 0, encFail = 0, reset = 0;
   static bool subscribed = false;
@@ -646,11 +700,25 @@ bool handleCommand(const String& lineIn) {
     strlcpy(g_cfg.bleName, val.c_str(), sizeof(g_cfg.bleName));
     saveConfig();
     g_log->printf("[TL] Bluetooth name \"%s\" - reboot to apply\n", g_cfg.bleName);
+  } else if (verb == "shutter") {
+    String v = val;
+    v.toLowerCase();
+    if (v != "phone" && v != "sony") { g_log->println("Usage: tl shutter phone|sony"); return true; }
+    g_cfg.shutter = (v == "sony") ? SHUTTER_SONY : SHUTTER_PHONE;
+    saveConfig();
+    g_log->printf("[TL] shutter: %s - reboot to apply\n",
+                  g_cfg.shutter == SHUTTER_SONY ? "Sony camera remote" : "phone keyboard");
   } else if (verb == "unpair") {
     if (!g_bleUp) { g_log->println("[TL] Bluetooth is off - nothing to unpair"); return true; }
     int rc = ble_store_clear();
-    g_log->printf("[TL] bonds deleted (rc=%d). Forget \"%s\" on the phone too, then pair again.\n",
-                  rc, g_cfg.bleName);
+    if (sonyMode()) {
+      Sony::forget();
+      g_log->printf("[TL] bonds and saved camera deleted (rc=%d). Delete the remote on the camera "
+                    "too, then put it in pairing mode.\n", rc);
+    } else {
+      g_log->printf("[TL] bonds deleted (rc=%d). Forget \"%s\" on the phone too, then pair again.\n",
+                    rc, g_cfg.bleName);
+    }
   } else {
     g_log->printf("[TL] unknown command '%s' - tl help\n", verb.c_str());
   }

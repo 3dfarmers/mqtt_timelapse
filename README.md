@@ -91,11 +91,11 @@ WiFi settings: config.h | printer settings: config.h
 3. Run the script:
 
 ```bash
-python tools/inject_timelapse_markers.py my_part.gcode.3mf my_part_tl.gcode.3mf --dwell 3
+python tools/inject_timelapse_markers.py my_part.gcode.3mf my_part_tl.gcode.3mf --dwell 8
 ```
 
 It prints what it found (layers, timelapse frames, bed temperatures), the first
-three insertions and the extra print time (3 s × layers). Without an output
+three insertions and the extra print time (8 s × layers). Without an output
 file it only inspects. It refuses files it does not understand rather than
 guessing where to put the marker.
 
@@ -152,9 +152,15 @@ The head has to stay parked until the photo is taken: network delay + about
 2. The board's LED blinks 150 ms on every marker (`MARKER_LED` in `config.h`).
    Film the LED and the toolhead together at 60 fps. The frames between "head
    parked" and "LED blinks" are your delay.
-3. dwell = worst delay + 1.3 s, rounded up to whole seconds. Usually 2 to 3.
-4. Every marked layer should show a `SHOT` line. Missed markers or a delay over
-   3 s point at a weak WiFi signal at the board or the printer.
+3. dwell = worst delay + 1.3 s, rounded up to whole seconds, plus margin.
+4. Every marked layer should show a `SHOT` line.
+
+Measured on a P1S (449-layer print, 5 s dwell): the phone fired within 0.3 s
+of the board, but the printer's reports arrive in roughly 2 s steps, so the
+marker sometimes reached the board late. About 1 frame in 10 caught the head
+already leaving the park. **Use `--dwell 8` on a P1S.** 8 s × 300 layers adds
+40 minutes. Check your own prints: a frame with the head blurred or moved
+toward the prime tower means the dwell is too short.
 
 ## How the marker is detected
 

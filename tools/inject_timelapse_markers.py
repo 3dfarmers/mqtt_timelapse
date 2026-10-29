@@ -10,7 +10,7 @@ conditional, toolhead parked) this adds:
     M140 S{bed}       ; restore the bed target
 
 Usage:
-    python inject_timelapse_markers.py input.gcode.3mf output.gcode.3mf --dwell 3 [--every 1] [--plate 1]
+    python inject_timelapse_markers.py input.gcode.3mf output.gcode.3mf --dwell 8 [--every 1] [--plate 1]
     python inject_timelapse_markers.py input.gcode.3mf              (inspect only, writes nothing)
 
 Only lines are inserted; every original line stays byte-identical, including
@@ -190,8 +190,8 @@ def main():
         description="Insert timelapse markers (bed target +1) after Bambu's timelapse park.")
     ap.add_argument("input", help="sliced .gcode.3mf from Bambu Studio")
     ap.add_argument("output", nargs="?", help="output .gcode.3mf (omit to inspect only)")
-    ap.add_argument("--dwell", type=int, default=3,
-                    help="seconds to hold the park per photo (G4 S, whole seconds; default 3)")
+    ap.add_argument("--dwell", type=int, default=8,
+                    help="seconds to hold the park per photo (G4 S, whole seconds; default 8, measured on a P1S)")
     ap.add_argument("--every", type=int, default=1, help="marker on every Nth layer (default 1)")
     ap.add_argument("--plate", type=int, default=1, help="plate number to process (default 1)")
     ap.add_argument("--delta", type=int, default=1,
